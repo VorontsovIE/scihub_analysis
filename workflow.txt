@@ -1,0 +1,169 @@
+Общие замечания по утилитам.
+sort можно тюнить при помощи -S <memsize> и -T <temp folder>. Второе особенно полезно, когда раздел /tmp маленький - тогда надо заводить папку в крупной партиции.
+Удобно следить за работой, встраивая в конвейер монитор числа обработанных строк `pv -l`. Ну и time, конечно.
+
+
+Операция вычисления временной зоны долгая и полагается на геокодирование внешними серисами (геокодер яндекса). Однако места и координаты часто повторяются - так что можно посчитать timezone для сравнительно небольшого числа уникальных мест, а затем просто подставлять полученную временную зону
+
+По координатам легко получить timezone (питоновская библиотека timezonefinder)
+zcat 2017.statistics.1016.j.tab.gz scihub_stats_2017.tsv.gz | cut -d $'\t' -f7,8 | fgrep -v 'N/A' | sort -t $'\t' -u > all_coords.tsv
+
+По местам сложнее, может потребоваться геокодирование
+zcat 2017.statistics.1016.j.tab.gz scihub_stats_2017.tsv.gz | cut -d $'\t' -f5,6 | sort -t $'\t' -u > all_places.tsv
+
+В некоторых случаях стоит знать и координаты, и город (чтобы геокодировать только те города, где координаты не указаны)
+zcat 2017.statistics.1016.j.tab.gz scihub_stats_2017.tsv.gz | cut -d $'\t' -f5,6,7,8 | sort -t $'\t' -u > all_places_and_coords.tsv
+
+
+Чтобы упростить задачу, отберем по странам те, где только одна временная зона. Это можно сделать переведя название страны в код, а по коду получив все временные зоны при помощи pytz. country_codes.tsv скопирован с https://www.geoips.com/en/resources/countries/country-profile/country/bo и поправлен руками. Временные зоны некоторых стран (Косово, например) вбиты руками. Ну и алиасы названий стран, конечно
+	import pytz
+	with open('country_timezones.tsv', 'w') as fw:
+	  with open('country_codes.tsv') as f:
+	    for l in f:
+	      country, code, *rest = l.strip().split("\t")
+	      zones = pytz.country_timezones(code)
+	      if len(zones) == 1:
+	        print(country, zones[0], sep="\t", file=fw)
+
+Кое-где, хотя зон несколько, весь 2017 они совпадают (Europe/Berlin и Europe/Busingen - как пример; так что всем немецким городам можно поставить эту зону - прямо в country_timezones можем упомянуть - заодно сгруппируем временные зоны, где можно)
+Например, проверим:
+
+require 'tzinfo'
+zones = ['Europe/Berlin', 'Europe/Busingen']
+zones.map!{|zone| TZInfo::Timezone.get(zone) }
+365.times.all?{|yday|
+  utc = Time.new(2017,1,1) + yday * 3600*24
+  zones.map{|zone| zone.period_for_utc(utc) }.uniq.size == 1
+}
+# => true - т.е. на протяжение всего года интервал временной зоны одинаков для обоих зон Германии
+Аналогичная история - в Палестине (Asia/Hebron и Asia/Gaza совпадают), в Украине (Europe/Kiev, Europe/Uzhgorod, Europe/Zaporozhye), в Узбекстане (Asia/Samarkand, Asia/Tashkent)
+
+Остается проверить товарищей, у которых нет координаты, и у которых по стране зону не определить. К счастью, таких "товарищей" немного, всего штук 50. Из них многие неразрешимы. Например, для неопределенного города Канады без координат, ничего нельзя поделать: там слишком большой разброс временных зон.
+	places = File.readlines('all_places_and_coords.tsv').map{|l| l.chomp.split("\t") }
+	country_timezones = File.readlines('country_timezones.tsv').map{|l| l.chomp.split("\t") }.to_h
+	places.reject{|row|
+	  country,city,lat,lng = *row
+	  has_coords = (lat != 'N/A') && (lng != 'N/A')
+	  has_coords || country_timezones.has_key?(country)
+	}.each{|row|
+	  puts row.join("\t")
+	}
+
+Остаётся некоторое количество отдельных городов, для которых мы через геокодер или руками вбиваем координаты. Временную зону по координатам можно узнать, например, таким образом:
+from timezonefinder import TimezoneFinder
+tf = TimezoneFinder()
+timezone=tf.certain_timezone_at(lat=lat, lng=lng)
+
+
+Дальше кодируем по принципу: проверяем зону по стране; затем по городу (вбитых вручную зон городов - считанные штуки); затем по координате. Координаты, которые требуется посчитать - выпишем координаты в файл coords_unknown_timezone.tsv и предподсчитаем зоны 
+	File.open('coords_unknown_timezone.tsv', 'w'){|fw|
+	  places = File.readlines('all_places_and_coords.tsv').map{|l| l.chomp.split("\t") }
+	  country_timezones = File.readlines('country_timezones.tsv').map{|l| l.chomp.split("\t") }.to_h
+	  city_timezones = File.readlines('city_timezones.tsv').map{|l| country, city, tz = l.chomp.split("\t"); [[country,city], tz] }.to_h
+	  places.select{|row|
+	    country,city,lat,lng = *row
+	    has_coords = (lat != 'N/A') && (lng != 'N/A')
+	    !country_timezones.has_key?(country) && !city_timezones.has_key?([country, city]) && has_coords  
+	  }.each{|row|
+	    fw.puts row.join("\t")
+	  }
+	}
+
+cat coords_unknown_timezone.tsv | python3 timezone_by_coords.py > timezone_by_coords.tsv
+
+Теперь, наконец, мы можем привести логи к локальному времени.
+
+zcat 2017.statistics.1016.j.tab.gz scihub_stats_2017.tsv.gz | ruby initial_prepare.rb >refined/in_local_time.tsv 2>refined/unmappable.tsv
+sort -t $'\t' -u -k1,1 -k2,2 -k15,15 -k16,16 refined/in_local_time.tsv | sponge refined/in_local_time.tsv
+sort -t $'\t' -u -k1,1 -k2,2 -k3  refined/unmappable.tsv | sponge refined/unmappable.tsv
+
+wc -l refined/*
+  189972487 refined/in_local_time.tsv
+    4370487 refined/unmappable.tsv
+
+Не приводится к локальному времени чуть больше 2% записей, не запредельно много. В основном они нам неинтересны, но их можно использовать как некоторый контроль того, что геокодер, которым пользуется sci-hub работает одинаково хорошо.
+
+На предыдущем шаге мы отсортировали по стране-городу все наши записи. Теперь мы можем разбить
+cat refined/in_local_time.tsv | ruby chunk_cities.rb
+
+ruby extract_city_counts.rb
+ruby aggregate_countries.rb
+
+
+Построим хороплет
+( echo $'country\tcount'; zcat 2017.statistics.1016.j.tab.gz scihub_stats_2017.tsv.gz | cut -f5 -d $'\t' | uniq -c | sed -re 's/^\s*([0-9]+)\s+(.+)/\2\t\1/' | sort -t $'\t' -k1,1 ) > country_heatmap.tsv
+( echo $'country\tcount'; zcat scihub_stats_2017.tsv.gz 2017.statistics.1016.j.tab.gz | awk --field-separator=$'\t' -e '($2 ~ /^10\.1109\//){print $0}' | cut -d $'\t' -f5 | sort | uniq -c | sed -re 's/^\s*([0-9]+)\s+(.+)/\2\t\1/' | sort -t $'\t' -k1,1 ) > country_heatmap_ieee.tsv
+( echo $'country\tcount'; zcat scihub_stats_2017.tsv.gz 2017.statistics.1016.j.tab.gz | awk --field-separator=$'\t' -e '($2 ~ /^(10\.1021|10\.1039)\//){print $0}' | cut -d $'\t' -f5 | sort | uniq -c | sed -re 's/^\s*([0-9]+)\s+(.+)/\2\t\1/' | sort -t $'\t' -k1,1 ) > country_heatmap_acs_rsc.tsv
+
+( echo $'country\tcount'; zcat scihub_stats_2017.tsv.gz 2017.statistics.1016.j.tab.gz | awk --field-separator=$'\t' -e '($2 ~ /^(10\.1016|10\.1006)\//){print $0}' | cut -d $'\t' -f5 | sort | uniq -c | sed -re 's/^\s*([0-9]+)\s+(.+)/\2\t\1/' | sort -t $'\t' -k1,1 ) > country_heatmap_elsevier.tsv
+
+# join --header -t $'\t' -1 1 -2 2 country_heatmap.tsv iso3_codes.tsv > country_heatmap_coded.tsv 
+# join --header -t $'\t' -1 1 -2 2 country_heatmap_ieee.tsv iso3_codes.tsv > country_heatmap_coded_ieee.tsv
+
+# join --header -t $'\t' <( head -1 country_heatmap.tsv; tail -n+2 country_heatmap.tsv | sort -t $'\t' -k1,1  ) <( head -1 population.tsv; tail -n+2 population.tsv | sort -t $'\t' -k1,1 ) > country_heatmap_w_population.tsv
+# join --header -t $'\t' <( head -1 country_heatmap_ieee.tsv; tail -n+2 country_heatmap.tsv | sort -t $'\t' -k1,1  ) <( head -1 population.tsv; tail -n+2 population.tsv | sort -t $'\t' -k1,1 ) > country_heatmap_ieee_w_population.tsv
+
+# Elsevier в январе
+( echo $'country\tcount'; zcat 2017.statistics.1016.j.tab.gz scihub_stats_2017.tsv.gz | awk --field-separator=$'\t' -e '(($2 ~ /^(10\.1016|10\.1006)\//) && ($1 ~ /^2017-(01|02-0)/)){print $0}' | cut -d $'\t' -f5 | sort | uniq -c | sed -re 's/^\s*([0-9]+)\s+(.+)/\2\t\1/' | sort -t $'\t' -k1,1 ) > country_heatmap_elsevier_january_upto_09feb.tsv
+
+( echo $'country\tcount'; zcat 2017.statistics.1016.j.tab.gz scihub_stats_2017.tsv.gz | awk --field-separator=$'\t' -e '($1 ~ /^2017-(01|02-0)/){print $0}' | cut -d $'\t' -f5 | sort | uniq -c | sed -re 's/^\s*([0-9]+)\s+(.+)/\2\t\1/' | sort -t $'\t' -k1,1 ) > country_heatmap_january_upto_09feb.tsv
+
+
+
+cat country_heatmap_coded.tsv | ./draw_choropleth.r choropleth.png
+cat country_heatmap_coded_ieee.tsv | ./draw_choropleth.r choropleth_ieee.png
+
+zcat 2017.statistics.1016.j.tab.gz scihub_stats_2017.tsv.gz | cut -d $'\t' -f7,8 | fgrep -v 'N/A' | ruby hitmap.rb 0.5 > heatmap_0.5.tsv
+
+cat heatmap_0.5.tsv | ./draw_dowloads_map.r all_downloads_0.5.png
+cat heatmap_0.5_ieee.tsv | ./draw_dowloads_map.r all_downloads_ieee.png
+
+
+Вытащим doi-префиксы издателей. Внимательно! некоторые doi-префиксы относятся сразу к нескольким издателям. Так я путал 10.1111 у Wiley Online и какого-то маленького корейского общества ботаников - и удивлялся, откуда такой интерес к ботанике.
+Попытка номер раз - https://figshare.com/articles/title/4172382
+Попытка номер два - query.wikidata.org:
+SELECT ?publisher ?publisherLabel ?doi WHERE {
+  SERVICE wikibase:label { bd:serviceParam wikibase:language "[AUTO_LANGUAGE],en". }
+  ?publisher wdt:P1662 ?doi.
+}
+
+
+zcat 2017.statistics.1016.j.tab.gz scihub_stats_2017.tsv.gz | cut -d $'\t' -f2,7,8 | grep -Pe '^10\.1109/' | cut -d $'\t' -f2,3 | fgrep -v 'N/A' | ruby hitmap.rb 0.5 > heatmap_0.5_ieee.tsv
+zcat 2017.statistics.1016.j.tab.gz scihub_stats_2017.tsv.gz | cut -d $'\t' -f2,7,8 | grep -Pe '(^10\.1016/)|(^10\.1006/)' | cut -d $'\t' -f2,3 | fgrep -v 'N/A' | ruby hitmap.rb 0.5 > heatmap_0.5_elsevier.tsv
+zcat 2017.statistics.1016.j.tab.gz scihub_stats_2017.tsv.gz | cut -d $'\t' -f2,7,8 | grep -Pe '^10\.1021/' | cut -d $'\t' -f2,3 | fgrep -v 'N/A' | ruby hitmap.rb 0.5 > heatmap_0.5_acs.tsv
+
+zcat 2017.statistics.1016.j.tab.gz scihub_stats_2017.tsv.gz | cut -d $'\t' -f2,7,8 | grep -Pe '^10\.1111/' | cut -d $'\t' -f2,3 | fgrep -v 'N/A' | ruby hitmap.rb 0.5 > heatmap_0.5_wiley.tsv
+
+
+Вычислим центры масс в каждом городе-стране ради дальнейшего корреляционного анализа
+Агрегируем mean_daytime по месяцам как квартили mean daytime
+
+ruby country_central_coords.rb
+ruby aggregate_latlng_w_meandaytimes.rb > latlng_meantime.tsv
+
+Посмотрим на доступность сервиса в разное время недели (в UTC), чтобы понять, нужен ли корректирующий коэффициент для разного времени, оценить масштаб ошибки.
+zcat 2017.statistics.1016.j.tab.gz scihub_stats_2017.tsv.gz | cut -f1 | ruby correction_on_availability.rb > availability.tsv
+time zcat 2017.statistics.1016.j.tab.gz scihub_stats_2017.tsv.gz | cut -d $'\t' -f1,5 | fgrep -w 'Russia' | cut -f1 | ruby correction_on_availability.rb > availability_Russia.tsv 
+cut -f4 availability.tsv | ruby -e 'min,max=readlines.map(&:to_f).minmax; puts [min,max, max/min].join("\t")'
+cut -f4 availability_Russia.tsv | ruby -e 'min,max=readlines.map(&:to_f).minmax; puts [min,max, max/min].join("\t")'
+
+
+
+Вычленим по doi названия статей и журналов:
+cat opencitations/corpus_id/*/*.json | jq -c '."@graph"[] | select(.type=="doi") | {"gid": .iri,"doi": .id}' | ruby -rjson -e '$stdin.each_line{|l| obj = JSON.parse(l); doi = obj["doi"].gsub(/^https:\/\/doi\.org\//i,"").gsub(/^\s*doi(:\s*|\s+|\s*:\s*)/i, ""); puts [obj["gid"], doi].join("\t") }' | sort -t $'\t' -k1,1 > opencitations/gid_doi.tsv
+
+Выделим иерархию статья-выпуск-журнал итп, чтобы потом каждый объект поднять до верхнего уровня
+
+cat opencitations/corpus_br/*/*.json | jq -c '."@graph"[] | {iri, part_of}' | ruby -rjson -e '$stdin.each_line{|l| obj=JSON.parse(l); puts obj.values_at("iri", "part_of").join("\t") }' | sort -t $'\t' -k1,1 > opencitations/resource_hierarchy.tsv
+
+cat opencitations/resource_hierarchy.tsv | ruby -e 'def get_root(node) $parent[node] ? get_root($parent[node]) : node; end; $parent = $stdin.readlines.map{|l| k,v=l.chomp.split("\t",2); [k,v.empty? ? nil : v] }.to_h; $parent.each_key{|node| puts [node,get_root(node)].join("\t") }' | sort -t $'\t' -k1,1 > opencitations/resource_hierarchy_root.tsv
+
+cat opencitations/corpus_br/*/*.json | jq -c '."@graph"[] | {iri, title, year}' | ruby -rjson -e '$stdin.each_line{|l| obj=JSON.parse(l); puts [obj["iri"], obj["title"]&.gsub(/\s+/, " "), obj["year"]&.gsub(/\s+/, " ")].join("\t") }' | sort -t $'\t' -k1,1 > opencitations/title_year.tsv
+
+cat opencitations/corpus_br/*/*.json | jq -c '."@graph"[] | {iri, identifier}' | ruby -rjson -e '$stdin.each_line{|l| obj=JSON.parse(l); [obj["identifier"]].flatten.compact.each{|id| puts [id, obj["iri"]].join("\t") } }' | sort -t $'\t' -k1,1 > opencitations/resource_for_gid.tsv
+
+join -t $'\t' opencitations/gid_doi.tsv opencitations/resource_for_gid.tsv | sort -t $'\t' -k3,3 | join -t $'\t' -1 3 - opencitations/title_year.tsv | join -t $'\t' - opencitations/resource_hierarchy_root.tsv | sort -t $'\t' -k6,6 | join -t $'\t' -1 6 - opencitations/title_year.tsv | cut -d $'\t' -f4- | sort -t $'\t' -k1,1 > opencitations/doi_title_year_journal_year.tsv
+
+
+ruby extract_heatmaps.rb
+cat cat by_city/Russia/Moskva.tsv | ruby extract_custom_heatmap.rb all heatmaps/custom/Moscow
