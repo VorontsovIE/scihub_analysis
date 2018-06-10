@@ -1,6 +1,10 @@
 WDAY_BY_IDX = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 Timeinfo = Struct.new(:year, :month, :day, :hour, :min, :sec, :wday, :yday, :dst,  keyword_init: true)
 
+def week_end(yday)  # 1 January 2017 (yday=1) was Sunday
+  (((yday-1) + 6) / 7) * 7 + 1
+end
+
 # Heatmap aggregates a matrix `PERIOD x TIME`
 # Default period is a week.
 # Time aggregates data of that period in custom bins. Bins can represent e.g.
@@ -15,9 +19,10 @@ class Heatmap
     @counts[ period_bin(time_info) ][ time_bin(time_info) ] += 1
   end
   
+
   # week is a default period
-  def period_bins_range; 0 ... (366/7); end
-  def period_bin(time_info); (time_info.yday - 1) / 7; end 
+  def period_bins_range; 0 ... (week_end(365)/7.0).ceil; end
+  def period_bin(time_info); week_end(time_info.yday) / 7; end 
   
   # any aggregates over period. E.g. (a)each day along period or (b)average day along period
   # should be redefined in subclasses

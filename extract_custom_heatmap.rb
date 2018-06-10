@@ -34,4 +34,6 @@ when 'daytime10'
   multi_heatmap.daytime10.print
 when 'daytime60'
   multi_heatmap.daytime60.print
+else
+  raise 'Unknown mode'
 end

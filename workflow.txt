@@ -166,4 +166,5 @@ join -t $'\t' opencitations/gid_doi.tsv opencitations/resource_for_gid.tsv | sor
 
 
 ruby extract_heatmaps.rb
-cat cat by_city/Russia/Moskva.tsv | ruby extract_custom_heatmap.rb all heatmaps/custom/Moscow
+mkdir -p heatmaps/custom
+cat by_city/Russia/Moskva.tsv | ruby extract_custom_heatmap.rb all heatmaps/custom/Moscow
