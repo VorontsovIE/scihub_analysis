@@ -1,3 +1,4 @@
+from time import sleep
 import time_counts
 import plotly.graph_objs as go
 from plotly.offline import iplot
@@ -77,5 +78,6 @@ def plot_weektime(places, filename=None, mode='weektime60', rescale=True, pull_d
     fig = go.Figure(data=data, layout=layout)
     if filename:
         iplot(fig, image_width=1280, image_height=1024, image='png', filename=filename)
+        sleep(1)
     else:
         iplot(fig, image_width=1280, image_height=1024)

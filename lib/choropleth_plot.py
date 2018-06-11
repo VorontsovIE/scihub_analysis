@@ -1,3 +1,4 @@
+from time import sleep
 import numpy as np
 import pandas as pd
 import plotly.graph_objs as go
@@ -42,6 +43,7 @@ def draw_choropleth_by_dataframe(df, title, filename=None):
     if filename:
         # don't fix height not to get large vertical pads around map
         iplot(choromap, validate=False, image_width=1280, image='png', filename=filename)#, image_height=1024
+        sleep(1)
     else:
         iplot(choromap, validate=False, image_width=1280)#, image_height=1024
 
