@@ -11,7 +11,7 @@ daytime_range_10 = (0 ... 6*24) # six 10-minute intervals per time
 hour_range = (0 ... 24)
 weekhour_range = (0 ... 24*7)
 weekhour_10_range = (0 ... 6*24*7)
-doi_prefixes = File.readlines('doi_prefixes.tsv').map(&:chomp).sort
+doi_prefixes = File.readlines('results_secondary/doi_prefixes.tsv').map(&:chomp).sort
 
 daytime_10_header = daytime_range_10.map{|bin| h,m = (bin * 10) / 60, (bin * 10) % 60; "%02d:%02d" % [h,m] }
 wday_header = wday_range.map{|wday_idx| wday_by_idx[wday_idx] }

@@ -38,5 +38,5 @@ coord_infos = country_dirnames.map{|country_dirname|
 
 country_coords = coord_infos.map(&:first)
 city_coords = coord_infos.flat_map(&:last)
-File.open('country_center_coords.tsv', 'w') {|fw| country_coords.each{|row| fw.puts row.join("\t") } }
-File.open('city_center_coords.tsv', 'w') {|fw| city_coords.each{|row| fw.puts row.join("\t") } }
+File.open('results_secondary/country_center_coords.tsv', 'w') {|fw| country_coords.each{|row| fw.puts row.join("\t") } }
+File.open('results_secondary/city_center_coords.tsv', 'w') {|fw| city_coords.each{|row| fw.puts row.join("\t") } }

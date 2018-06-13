@@ -4,20 +4,20 @@ require 'date'
 DATETIME_PATTERN = /^(?<year>\d+)-0?(?<month>\d+)-0?(?<day>\d+) 0?(?<hour>\d+):0?(?<minute>\d+):0?(?<second>\d+)$/
 
 tz_by_country = {}
-File.readlines('country_timezones.tsv').map{|l|
+File.readlines('results_secondary/country_timezones.tsv').map{|l|
   country, tz = l.chomp.split("\t")
   tz_by_country[country] = tz
 }
 
 tz_by_city = {}
-File.readlines('city_timezones.tsv').map{|l|
+File.readlines('supplementary_data/city_timezones.tsv').map{|l|
   country, city, tz = l.chomp.split("\t")
   tz_by_city[country] ||= {}
   tz_by_city[country][city] = tz
 }
 
 tz_by_coord = {}
-File.readlines('timezone_by_coords.tsv').map{|l|
+File.readlines('results_secondary/timezone_by_coords.tsv').map{|l|
   lat, lng, tz = l.chomp.split("\t")
   tz_by_coord[lat] ||= {}
   tz_by_coord[lat][lng] = tz

@@ -5,7 +5,7 @@ end
 
 total_by_city = Hash.new{|h,k| h[k] = Hash.new{|h2,k2| h2[k2] = 0 } }
 latlng_by_city = Hash.new{|h,k| h[k] = Hash.new{|h2,k2| h2[k2] = [nil, nil] } }
-File.readlines('city_center_coords.tsv').map{|l|
+File.readlines('results_secondary/city_center_coords.tsv').map{|l|
   country, city, total, lat, lng = l.chomp.split("\t")
   total_by_city[country][city] = total
   latlng_by_city[country][city] = [lat, lng]

@@ -2,3 +2,5 @@ numpy
 pandas
 plotly
 colorcet
+pytz
+timezonefinder
